@@ -15,10 +15,12 @@
 #include <QVector>
 #include <QVariant>
 #include <QValueAxis>
+#include <stdint.h>
 
 namespace doocs_zmq_reader{ namespace ui { namespace qt{
 
-class Graphic final : public ::QtCharts::QChartView
+//class Graphic final : public ::QtCharts::QChartView
+class Graphic final : public ::QWidget
 {
 public:
 	Graphic();
@@ -28,13 +30,30 @@ private:
 	void PlotGui(const QVector<QVariant>& a_readedData);
 
 private:
-	::QtCharts::QChart			m_chart;
-	::QtCharts::QLineSeries		m_lineSeries;
+	//::QtCharts::QChart			m_chart;
+	//::QtCharts::QLineSeries		m_lineSeries;
+	//int32_t						m_pointsCount;
+	//qreal						m_lfXkoef, m_lfYkoef;
+	//QVector<QPointF>			m_buffer;
+	//::QtCharts::QValueAxis		m_axisX;
+	//::QtCharts::QValueAxis		m_axisY;
+
+	::QtCharts::QChart *m_chart;
+	::QtCharts::QLineSeries *m_series ;
+	::QtCharts::QValueAxis *m_axisX;
+	::QtCharts::QValueAxis *m_axisY;
 	int32_t						m_pointsCount;
 	qreal						m_lfXkoef, m_lfYkoef;
+	qreal						m_lfXmin, m_lfXmax;
+	qreal						m_lfYmin, m_lfYmax;
 	QVector<QPointF>			m_buffer;
-	::QtCharts::QValueAxis		m_axisX;
-	::QtCharts::QValueAxis		m_axisY;
+
+	union{
+		struct{
+			uint64_t	isMaxMinNotInited : 1;
+		}bits;
+		uint64_t allBits;
+	}m_statuses;
 
 };
 

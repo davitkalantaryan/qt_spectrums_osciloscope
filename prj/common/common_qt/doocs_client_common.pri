@@ -6,20 +6,33 @@
 # for PITZ
 #
 
-MYDOOCS = /afs/ifh.de/group/pitz/doocs
-
-INCLUDEPATH += $$MYDOOCS/include
-
 message("!!! doocs_client_common.pri:")
 
-QMAKE_CXXFLAGS_WARN_ON += -Wno-attributes
+#QMAKE_CXXFLAGS_WARN_ON += -Wno-attributes
 
 include(../../common/common_qt/sys_common.pri)
 
-SYSTEM_LIB = $$MYDOOCS/system_arch/$$CODENAME/lib
+
+win32{
+    MYDOOCS =  = D:/davit/dev/udoocs
+    SYSTEM_LIB = $$MYDOOCS/sys/win_x64/lib
+    INCLUDEPATH += $$MYDOOCS/contrib/doocs/clientlib/include
+    INCLUDEPATH += $$MYDOOCS/contrib/doocs/serverlib/include
+    INCLUDEPATH += $$MYDOOCS/contrib/zmq/include
+
+} else {
+    GCCPATH = $$system(which gcc)
+    MYDOOCS = /afs/ifh.de/group/pitz/doocs
+    SYSTEM_LIB = $$MYDOOCS/system_arch/$$CODENAME/lib
+    LIBS += -lldap
+    LIBS += -lrt
+
+}
+
+INCLUDEPATH += $$MYDOOCS/include
 
 # message ("!!!!! No cpp 11 used") # todo: calculate in the sys_common.pri
-QMAKE_CXXFLAGS += -std=c++0x
+#QMAKE_CXXFLAGS += -std=c++0x
 
 equals(CODENAME,"Boron") {
     INCLUDEPATH += $$SYSTEM_LIB/include
@@ -36,9 +49,6 @@ else {
     }
 }
 
-
-message("!!! SYSTEM_LIB: $$SYSTEM_LIB")
-
 DEFINES += LINUX
 
 #LIBS += -L/doocs/lib
@@ -47,13 +57,3 @@ LIBS += -L$$SYSTEM_LIB
 #LIBS += -L/doocs/develop/bagrat/doocs.git/amd64_rhel60/lib
 LIBS += -lDOOCSapi
 LIBS +=	-lgul14
-LIBS += -lldap
-LIBS += -lrt
-
-include(../../common/common_qt/sys_common.pri)
-
-#INCLUDEPATH += /doocs/include/doocs
-#INCLUDEPATH += $$SYSTEM_LIB/include/doocs
-#INCLUDEPATH += /doocs/develop/bagrat/doocs.git/include
-
-INCLUDEPATH += /afs/ifh.de/group/pitz/doocs/lib/include

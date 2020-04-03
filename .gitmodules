@@ -1,0 +1,3 @@
+[submodule "contrib/pitz_daq_data_handling"]
+	path = contrib/pitz_daq_data_handling
+	url = https://kalantar@stash.desy.de/scm/ers/pitz_daq_data_handling.git

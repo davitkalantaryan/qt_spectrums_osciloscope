@@ -14,31 +14,36 @@ using namespace doocs_zmq_reader;
 
 
 ui::qt::Graphic::Graphic()
-	:
-	  m_chart(new ::QtCharts::QChart),
-		  m_series(new ::QtCharts::QLineSeries)
 {
 
 	m_statuses.allBits = 0;
 	m_statuses.bits.isMaxMinNotInited = 1;
 
-	::QtCharts::QChartView *chartView = new ::QtCharts::QChartView(m_chart);
-		chartView->setMinimumSize(800, 600);
-		m_chart->addSeries(m_series);
-		m_axisX = new ::QtCharts::QValueAxis;
-		m_axisX->setLabelFormat("%g");
-		m_axisX->setTitleText("Samples");
-		m_axisY = new ::QtCharts::QValueAxis;
+	setChart(&m_chart);
+
+	//::QtCharts::QChartView *chartView = new ::QtCharts::QChartView(&m_chart);
+		//chartView->setMinimumSize(800, 600);
+	setMinimumSize(800, 600);
+		m_chart.addSeries(&m_series);
+		m_chart.addAxis(&m_axisX,Qt::AlignBottom);
+		m_series.attachAxis(&m_axisX);
+		m_axisX.setLabelFormat("%g");
+		m_axisX.setTitleText("Samples");
+			m_chart.addAxis(&m_axisY,Qt::AlignLeft);
+			m_series.attachAxis(&m_axisY);
+
 		//m_axisX->setRange(0, 10000);
 		//m_axisY->setRange(0,35000);
-		m_axisY->setTitleText("Audio level");
-		m_chart->setAxisX(m_axisX, m_series);
-		m_chart->setAxisY(m_axisY, m_series);
-		m_chart->legend()->hide();
-		m_chart->setTitle("Data from the microphone (" + QString("TestName") + ')');
+		m_axisY.setTitleText("Audio level");
+		//m_chart->setAxisX(m_axisX, m_series);
+		//m_chart->setAxisY(m_axisY, m_series);
+		//m_chart->addAxis(m_axisX,Qt::AlignLeft);
+		//m_chart->addAxis(m_axisY,Qt::AlignBottom);
+		m_chart.legend()->hide();
+		m_chart.setTitle("Data from the microphone (" + QString("TestName") + ')');
 
-		QVBoxLayout *mainLayout = new QVBoxLayout(this);
-		mainLayout->addWidget(chartView);
+		//QVBoxLayout *mainLayout = new QVBoxLayout(this);
+		//mainLayout->addWidget(chartView);
 
 
 #if 0
@@ -97,23 +102,8 @@ void ui::qt::Graphic::PlotGui(const QVector<QVariant>& a_readedData)
 	if(newPointsCount!=m_pointsCount){
 		m_buffer.resize(newPointsCount);
 		m_pointsCount = newPointsCount;
-		//if(newPointsCount<m_lastPointsCount){
-		//	for(unIter=newPointsCount;unIter<m_lastPointsCount;++unIter){
-		//		m_lineSeries.remove(unIter);
-		//	}
-		//}
-		//else{
-		//	for(unIter=m_lastPointsCount;unIter<newPointsCount;++unIter){
-		//		m_lineSeries.append(static_cast<qreal>(unIter),zmqToChart(nSingleItemSize,pcData));
-		//		pcData += nSingleItemSize;
-		//	}
-		//}
-		//m_lastPointsCount = newPointsCount;
 
-		m_lfXmin = 0.;
-		m_lfXmax = static_cast<qreal>(m_pointsCount)*m_lfXkoef;
-
-		m_axisX->setRange(m_lfXmin,m_lfXmax);
+		m_axisX.setRange(0.,static_cast<qreal>(m_pointsCount)*m_lfXkoef);
 
 		for(;unIter<m_pointsCount;++unIter){
 			m_buffer[unIter].setX(static_cast<qreal>(unIter)*m_lfXkoef);
@@ -139,9 +129,9 @@ void ui::qt::Graphic::PlotGui(const QVector<QVariant>& a_readedData)
 	free(pcDataInit);
 	free(pcSecondHeaderInit);
 	if(bYmaxOrMinChanged){
-		m_axisY->setRange(m_lfYmin,m_lfYmax);
+		m_axisY.setRange(m_lfYmin,m_lfYmax);
 	}
-	m_series->replace(m_buffer);
+	m_series.replace(m_buffer);
 }
 
 

@@ -19,8 +19,8 @@
 
 namespace doocs_zmq_reader{ namespace ui { namespace qt{
 
-//class Graphic final : public ::QtCharts::QChartView
-class Graphic final : public ::QWidget
+class Graphic final : public ::QtCharts::QChartView
+//class Graphic final : public ::QWidget
 {
 public:
 	Graphic();
@@ -38,13 +38,12 @@ private:
 	//::QtCharts::QValueAxis		m_axisX;
 	//::QtCharts::QValueAxis		m_axisY;
 
-	::QtCharts::QChart *m_chart;
-	::QtCharts::QLineSeries *m_series ;
-	::QtCharts::QValueAxis *m_axisX;
-	::QtCharts::QValueAxis *m_axisY;
+	::QtCharts::QChart			m_chart;
+	::QtCharts::QLineSeries		m_series ;
+	::QtCharts::QValueAxis		m_axisX;
+	::QtCharts::QValueAxis		m_axisY;
 	int32_t						m_pointsCount;
 	qreal						m_lfXkoef, m_lfYkoef;
-	qreal						m_lfXmin, m_lfXmax;
 	qreal						m_lfYmin, m_lfYmax;
 	QVector<QPointF>			m_buffer;
 

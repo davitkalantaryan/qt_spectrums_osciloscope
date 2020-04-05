@@ -15,5 +15,7 @@
         <file>img/stop_all_btn.png</file>
         <file>img/home_btn.png</file>
         <file>img/zero_btn.png</file>
+	<file>img/green_plus.png</file>
+	<file>img/window_frame.png</file>
     </qresource>
 </RCC>

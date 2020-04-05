@@ -29,8 +29,6 @@ private:
 	QMenuBar		m_menuBarLeft ;
 	QMenuBar		m_menuBarRight;
 	QToolBar		m_mainToolBar;
-	QAction			m_actionConnect;
-	QAction			m_actionDisconnect;
 	QAction			m_actionExit;
 	QMenu*			m_pFileMenu;
 	Graphic			m_graph;

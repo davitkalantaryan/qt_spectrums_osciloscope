@@ -76,6 +76,7 @@ void ::common::ui::qt::SizeableWidget<ParentWidget>::showEvent(QShowEvent *a_eve
 	}
 
 	aSize=aSettings.value(settingsKeyPlusGeo + "Size", ParentWidget::sizeHint() ).toSize();
+	ParentWidget::setGeometry(aLeftTop.x(),aLeftTop.y(),aSize.width(),aSize.height());
 	ParentWidget::showEvent(a_event);
 }
 

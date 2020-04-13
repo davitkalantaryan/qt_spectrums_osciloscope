@@ -7,7 +7,8 @@
 #ifndef SRC_UI_QT_CONNECTIONDIALOG_HPP
 #define SRC_UI_QT_CONNECTIONDIALOG_HPP
 
-#include <common/ui/qt/sizeabledialog.hpp>
+#include <common/ui/qt/sizeablewidget.hpp>
+#include <QDialog>
 #include <QGridLayout>
 #include <QLineEdit>
 #include <QComboBox>
@@ -33,7 +34,7 @@ class Enslabel final : public QLabel
 };
 
 
-class ConnectionDialog final : private ::common::ui::qt::SizeableDialog
+class ConnectionDialog final : private ::common::ui::qt::SizeableWidget< ::QDialog >
 {
 public:
 	ConnectionDialog(QWidget* a_pParent);
@@ -62,7 +63,7 @@ private:
 };
 
 
-class EnsChangerDialog final : private ::common::ui::qt::SizeableDialog
+class EnsChangerDialog final : private ::common::ui::qt::SizeableWidget< ::QDialog >
 {
 public:
 	EnsChangerDialog(QWidget* a_pParent);

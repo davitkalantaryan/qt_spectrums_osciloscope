@@ -20,20 +20,27 @@
 #include <QLegendMarker>
 #include <QLegend>
 #include <QAction>
-#include <common/ui/qt/sizeabledialog.hpp>
+#include <common/ui/qt/sizeablewidget.hpp>
+#include <QDialog>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <ui/qt/events.hpp>
+#include <pitz_daq_data_handling_types.h>
+#include <QLabel>
+#include <QDoubleSpinBox>
+#include <QSettings>
 
 namespace doocs_zmq_reader{ namespace ui { namespace qt{
 
 
 class SingSeries;
 class HandlerDlg;
+class SeriesSettings;
 
 class Graphic final : public ::QtCharts::QChartView
 {
 	friend class SingSeries;
+	friend class HandlerDlg;
 public:
 	Graphic();
 	~Graphic()override;
@@ -52,14 +59,15 @@ private:
 	QAction						m_actionPlus;
 	::QtCharts::QValueAxis		m_axisX;
 	::QtCharts::QValueAxis		m_axisY;
+	::QSettings					m_settings;
 	qreal						m_lfXmin, m_lfXmax;
 	qreal						m_lfYmin, m_lfYmax;
 
 	union{
 		struct{
-			//uint64_t	isXmaxMinNotInited : 1;
-			//uint64_t	isYmaxMinNotInited : 1;
-			uint64_t	isMaxMinNotInited : 1;
+			uint64_t	fitGraphNumber : 10;
+			uint64_t	isXmaxMinInited : 1;
+			uint64_t	isYmaxMinInited : 1;
 		}bits;
 		uint64_t allBits;
 	}m_statuses;
@@ -71,12 +79,14 @@ class SingSeries final : public ::QtCharts::QLineSeries
 {
 	friend class HandlerDlg;
 	friend class Graphic;
+	friend class SeriesSettings;
 private:
 	SingSeries(Graphic* a_pParentGraphic);
 	~SingSeries() override;
-	qreal  zmqToChart(int32_t singleDataSize, const char* zmqData)const;
-	void PlotGui(int32_t numberOfPoint, int32_t singleItemSize, const void* secondHeaderBuffer, const void* pData);
+	//qreal  zmqToChart(int32_t singleDataSize, const char* zmqData)const;
+	void PlotGui(int32_t numberOfPoint, const void* secondHeaderBuffer, const void* pData);
 	bool event(QEvent* event) override;
+	void SetEntryDetails(const SSingleEntryBase& entryDetails);
 
 public:
 	void SetNotAlive();
@@ -84,24 +94,24 @@ public:
 private:
 	Graphic*					m_pParentGraphic;
 	::QtCharts::QLegendMarker*	m_pLegendMarker;
-	int32_t						m_pointsCount;
 	qreal						m_lfXkoef;
-	qreal						m_lfYkoef;
 	QVector<QPointF>			m_buffer;
-	SSingleEntryBase			m_details;
+	SSingleEntryBase			m_details2;
 	::std::list<SingSeries*>::iterator	m_iter;
+	PrepareDaqEntryInputs		m_input;
+	PrepareDaqEntryOutputs		m_outputs;
 
 	union{
 		struct{
+			uint64_t	fitGraphNumber : 10;
 			uint64_t	isAlive : 1;
-			uint64_t	isProblemHidden : 1;
 		}bits;
 		uint64_t allBits;
 	}m_statuses;
 };
 
 
-class HandlerDlg final : public ::common::ui::qt::SizeableDialog
+class HandlerDlg final : public ::common::ui::qt::SizeableWidget< ::QDialog >
 {
 public:
 	HandlerDlg(Graphic* pGraph, SingSeries* pSeries);
@@ -111,12 +121,34 @@ private:
 
 private:
 	QVBoxLayout		m_mainLayout;
-	QPushButton		m_hideUnhideProblem;
+	QPushButton		m_toggleSign;
 	QPushButton		m_deleteBtn;
+	QPushButton		m_settingsBtn;
 	QPushButton		m_cancel;
 	Graphic*		m_pGraph;
 	SingSeries*		m_pSeries;
 	Qt::WindowFlags     m_defaultWindowFlags;
+
+};
+
+class SeriesSettings final : private ::common::ui::qt::SizeableWidget< ::QDialog >
+{
+	friend class HandlerDlg;
+public:
+	SeriesSettings(Graphic* pGraph,SingSeries* pSeries);
+
+	bool MyExec();
+
+private:
+	SingSeries*		m_pSeries;
+	QGridLayout		m_mainLayout;
+	QLabel			m_lblXkoef;
+	QDoubleSpinBox	m_XkoefSpin;
+	QLabel			m_lblYkoef;
+	QDoubleSpinBox	m_YkoefSpin;
+	QPushButton		m_btnSet;
+	QPushButton		m_btnCancel;
+	bool			m_bSetPushed;
 
 };
 

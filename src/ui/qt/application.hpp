@@ -24,8 +24,6 @@
 #include <set>
 #include <QDebug>
 
-#define NewSettings	::QSettings
-
 #define thisApp()							static_cast< ::doocs_zmq_reader::ui::qt::Application* >( QCoreApplication::instance() )
 #define	PointerToQvariant(_ptr)				static_cast<qulonglong>(reinterpret_cast<size_t>((_ptr)))
 #define	FPointerToQvariant(_fptr)			PointerToQvariant( *reinterpret_cast<void**>(&(_fptr)) )
@@ -33,7 +31,8 @@
 #define VariantToPtr(_type,_variant)		VariantToPtrRaw(_type*,(_variant))
 #define RECENT_PAST_ENTRIES_SETTINGS_KEY	"RECENT_PAST_ENTRIES"
 #define CURRENT_ENTRIES_SETTINGS_KEY		"CURRENT_ENTRIES"
-#define ENS_TERMINATOR						"=>"
+//#define ENS_TERMINATOR						"=>"
+#define ENS_TERMINATOR2						"/"
 
 //#define INDEX_FOR_TYPE				0
 //#define INDEX_FOR_SINGLE_ITEM_SIZE	1
@@ -85,37 +84,12 @@ class WorkerThread final : public QThread
 	void run() override;
 };
 
-#ifndef NewSettings
-class NewSettingsCls
-{
-	friend class USettings;
-public:
-	void setValue(const QString &a_key, const QVariant &a_value){
-		if(a_key==RECENT_PAST_ENTRIES_SETTINGS_KEY){
-			qDebug()<<"!!!!!!!!!!!!!!!!!!!! key:"<<a_key<<",value:"<<a_value;
-		}
-		m_settings.setValue(a_key,a_value);
-	}
-
-	QVariant value(const QString &a_key, const QVariant &a_defaultValue = QVariant()) const{
-		return m_settings.value(a_key,a_defaultValue);
-	}
-	bool contains(const QString& a_key){
-		return m_settings.contains(a_key);
-	}
-private:
-	::QSettings		m_settings;
-};
-#define NewSettings_redefined
-#define NewSettings ::doocs_zmq_reader::ui::qt::NewSettingsCls
-#endif
-
 class USettings
 {
 	friend class Application;
 	USettings();
 	~USettings();
-	NewSettings* m_pSettings;
+	QSettings* m_pSettings;
 };
 
 class WorkerObject final : public QObject {
@@ -137,7 +111,6 @@ public:
 	void RemoveExistingPropertyAnyThread(SSingleEntry* a_pExisting);
 	const QString& ensHostValue()const;
 	void SetEnsHostValue(const QString&);
-	NewSettings& settings();
 	void StopZmqReceiverThread();
 
 private:

@@ -9,6 +9,8 @@
 using namespace doocs_zmq_reader;
 
 ui::qt::MainWindow::MainWindow()
+	:
+	  ::common::ui::qt::SizeableWidget< ::QMainWindow >(nullptr)
 {
 	setCentralWidget(&m_centralWidget);
 }

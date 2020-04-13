@@ -27,10 +27,7 @@ ui::qt::Graphic::Graphic()
 	:
 	  m_actionPlus(QIcon(":/img/green_plus.png"),tr("Add property"),this)
 {
-	NewSettings& aSettings = thisApp()->settings();
-
 	m_statuses.allBits = 0;
-	m_statuses.bits.isMaxMinNotInited = 1;
 
 	setChart(&m_chart);
 
@@ -58,11 +55,11 @@ ui::qt::Graphic::Graphic()
 		}
 	});
 
-	if(aSettings.contains(CURRENT_ENTRIES_SETTINGS_KEY)){
+	if(m_settings.contains(CURRENT_ENTRIES_SETTINGS_KEY)){
 		SingSeries* pSeries;
 		QString curEnsValue = thisApp()->ensHostValue();
 		QString ensHostName,doocsAddress;
-		QList<QVariant> lastEntries = aSettings.value(CURRENT_ENTRIES_SETTINGS_KEY).toList();
+		QList<QVariant> lastEntries = m_settings.value(CURRENT_ENTRIES_SETTINGS_KEY).toList();
 
 		for(auto ensPlusDoocs : lastEntries){
 			if(GetEnsAndDoocsAddressFromSavedString(ensPlusDoocs.toString(),&ensHostName,&doocsAddress)){
@@ -95,7 +92,7 @@ QAction* ui::qt::Graphic::ActionAddProperty()
 void ui::qt::Graphic::RemoveSeries(SingSeries* a_pSeries)
 {
 	m_chart.removeSeries(a_pSeries);
-	thisApp()->RemoveExistingPropertyAnyThread(a_pSeries->m_details.pParent);
+	thisApp()->RemoveExistingPropertyAnyThread(a_pSeries->m_details2.pParent);
 	m_listSeries.erase(a_pSeries->m_iter);
 	while(a_pSeries->m_statuses.bits.isAlive){
 		Sleep(1);
@@ -111,11 +108,7 @@ bool ui::qt::Graphic::event(QEvent* a_event)
 	if(pEvent){
 		SingSeries* pSeries = pEvent->pSeries();
 		if(pEvent->isAddingOk()){
-			NewSettings& aSettings = thisApp()->settings();
-			bool bProblemHidden;
-			pSeries->m_details = pEvent->entryDetails();
-			bProblemHidden = aSettings.value("ui::qt::SingSeries"+pSeries->m_details.ensPlusDoocsAdr).toBool();
-			pSeries->m_statuses.bits.isProblemHidden = bProblemHidden?1:0;
+			pSeries->SetEntryDetails(pEvent->entryDetails());
 			AddNewSeries(pSeries,pEvent->errorStringOrDoocsAddress());
 		}
 		else{
@@ -141,7 +134,9 @@ void ui::qt::Graphic::mouseReleaseEvent(QMouseEvent* a_event)
 			 QMenu aMenu;
 
 			 aMenu.addAction("FitGraph",[this](){
-				 m_statuses.bits.isMaxMinNotInited = 1;
+				 m_statuses.bits.isXmaxMinInited = 0;
+				 m_statuses.bits.isYmaxMinInited = 0;
+				 ++m_statuses.bits.fitGraphNumber;
 			 });
 
 			 aMenu.exec(mapToGlobal(a_event->pos()));
@@ -192,14 +187,25 @@ void ui::qt::Graphic::AddNewSeries( SingSeries* a_newSeries,const QString& a_leg
 
 /*/////////////////////////////////////////////////////////////////////////////////////*/
 
+static void TypeDataGetterStatic(double a_inData, void* a_outData, void** a_outDataNext)
+{
+	QPointF* pOutData = static_cast<QPointF*>(a_outData);
+	pOutData->setY(a_inData);
+	*a_outDataNext = (++pOutData);
+}
+
 ui::qt::SingSeries::SingSeries( Graphic* a_pParentGraphic )
 	:
 	  m_pParentGraphic(a_pParentGraphic)
 {
 	m_statuses.allBits = 0;
 	m_pLegendMarker = nullptr;
-	m_lfYkoef = m_lfXkoef = 1.;
+	m_lfXkoef = 1.;
 	m_statuses.bits.isAlive = 1;
+	memset(&m_input,0,sizeof(m_input));
+	memset(&m_outputs,0,sizeof(m_outputs));
+	m_input.yKoef = 1.0;
+	m_input.fpDataGetter = &TypeDataGetterStatic;
 }
 
 
@@ -217,97 +223,70 @@ void ui::qt::SingSeries::SetNotAlive()
 
 #define FORMULA_FOR_X(_x)	( static_cast<qreal>(_x)*m_lfXkoef )
 
-void ui::qt::SingSeries::PlotGui(int32_t a_numberOfPoint, int32_t a_singleItemSize, const void* /*a_secondHeaderBuffer*/, const void* a_pData)
+void ui::qt::SingSeries::PlotGui(int32_t a_numberOfPoint, const void* /*a_secondHeaderBuffer*/, const void* a_pData)
 {
-	bool bXalreadyScanned = false;
-	bool bXmaxOrMinChanged=false;
-	bool bYmaxOrMinChanged=false;
-	qreal lfCurrX;
-	qreal lfCurrentValue;
-	int32_t unIterY=0;
 	int32_t newPointsCount = static_cast<int32_t>(a_numberOfPoint);
-	int32_t nSingleItemSize = a_singleItemSize;
-	const char* pcData = static_cast<const char*>(a_pData);
-	if(newPointsCount!=m_pointsCount){
+
+	if(
+			(newPointsCount!=m_input.countIn)||(!m_pParentGraphic->m_statuses.bits.isXmaxMinInited) ||
+			(m_statuses.bits.fitGraphNumber!=m_pParentGraphic->m_statuses.bits.fitGraphNumber)){
 		int32_t unIterX=0;
+		double lfCurrX;
+		bool bXmaxMinChanged = false;
 		m_buffer.resize(newPointsCount);
-		m_pointsCount = newPointsCount;
-
-		if(m_pParentGraphic->m_statuses.bits.isMaxMinNotInited){
+		m_statuses.bits.fitGraphNumber = m_pParentGraphic->m_statuses.bits.fitGraphNumber;
+		m_input.countIn = newPointsCount;
+		if (!m_pParentGraphic->m_statuses.bits.isXmaxMinInited){
 			m_pParentGraphic->m_lfXmin = m_pParentGraphic->m_lfXmax = FORMULA_FOR_X(0);
-			m_buffer[0].setX(m_pParentGraphic->m_lfXmin);
-			unIterX = 1;
+			unIterX=1;
+			m_pParentGraphic->m_statuses.bits.isXmaxMinInited = 1;
 		}
-
-		for(;unIterX<m_pointsCount;++unIterX){
+		for( ;unIterX<newPointsCount;++unIterX){
 			lfCurrX = FORMULA_FOR_X(unIterX);
-			if(lfCurrX>m_pParentGraphic->m_lfXmax){m_pParentGraphic->m_lfXmax=lfCurrX; bXmaxOrMinChanged=true;}
-			if(lfCurrX<m_pParentGraphic->m_lfXmin){m_pParentGraphic->m_lfXmin=lfCurrX; bXmaxOrMinChanged=true;}
+			if(lfCurrX>m_pParentGraphic->m_lfXmax){m_pParentGraphic->m_lfXmax=lfCurrX;bXmaxMinChanged=true; }
+			if(lfCurrX<m_pParentGraphic->m_lfXmin){m_pParentGraphic->m_lfXmin=lfCurrX;bXmaxMinChanged=true; }
 			m_buffer[unIterX].setX(lfCurrX);
 		}
-		bXalreadyScanned = true;
 
-	}  // if(newPointsCount!=m_lastPointsCount){
-
-	if(m_pParentGraphic->m_statuses.bits.isMaxMinNotInited){
-		m_pParentGraphic->m_lfYmin = m_pParentGraphic->m_lfYmax = zmqToChart(nSingleItemSize,pcData);
-		pcData += nSingleItemSize;
-		m_buffer[0].setY(m_pParentGraphic->m_lfYmin);
-		if(!bXalreadyScanned){
-			for(int32_t unIterX(1);unIterX<m_pointsCount;++unIterX){
-				m_pParentGraphic->m_lfXmin = m_pParentGraphic->m_lfXmax = FORMULA_FOR_X(0);
-				m_buffer[0].setX(m_pParentGraphic->m_lfXmin);
-				lfCurrX = FORMULA_FOR_X(unIterX);
-				if(lfCurrX>m_pParentGraphic->m_lfXmax){m_pParentGraphic->m_lfXmax=lfCurrX; bXmaxOrMinChanged=true;}
-				if(lfCurrX<m_pParentGraphic->m_lfXmin){m_pParentGraphic->m_lfXmin=lfCurrX; bXmaxOrMinChanged=true;}
-				m_buffer[unIterX].setX(lfCurrX);
-			}
+		if(bXmaxMinChanged){
+			m_pParentGraphic->m_axisX.setRange(m_pParentGraphic->m_lfXmin,m_pParentGraphic->m_lfXmax);
 		}
-		unIterY = 1;
-		m_pParentGraphic->m_statuses.bits.isMaxMinNotInited=0;
-	}  // if(m_pParentGraphic->m_statuses.bits.isMaxMinNotInited){
 
-	if(bXmaxOrMinChanged){
-		m_pParentGraphic->m_axisX.setRange(m_pParentGraphic->m_lfXmin,m_pParentGraphic->m_lfXmax);
 	}
 
-	for(;unIterY<m_pointsCount;++unIterY){
-		lfCurrentValue = zmqToChart(nSingleItemSize,pcData);
-		pcData += nSingleItemSize;
-		if(lfCurrentValue>m_pParentGraphic->m_lfYmax){m_pParentGraphic->m_lfYmax=lfCurrentValue; bYmaxOrMinChanged=true;}
-		if(lfCurrentValue<m_pParentGraphic->m_lfYmin){m_pParentGraphic->m_lfYmin=lfCurrentValue; bYmaxOrMinChanged=true;}
-		m_buffer[unIterY].setY(lfCurrentValue);
-	}
-	if(bYmaxOrMinChanged){
+	m_input.maxOrMinInited = m_pParentGraphic->m_statuses.bits.isYmaxMinInited;
+	m_input.inpData = a_pData;
+	m_outputs.outData = m_buffer.data();
+	m_outputs.yMinInOut = m_pParentGraphic->m_lfYmin;
+	m_outputs.yMaxInOut = m_pParentGraphic->m_lfYmax;
+
+	PrepareDaqEntryBasedOnType(&m_input,&m_outputs);
+	m_pParentGraphic->m_lfYmin = m_outputs.yMinInOut;
+	m_pParentGraphic->m_lfYmax = m_outputs.yMaxInOut;
+	m_pParentGraphic->m_statuses.bits.isYmaxMinInited = 1;
+
+	if(m_outputs.maxOrMinChanged){
 		m_pParentGraphic->m_axisY.setRange(m_pParentGraphic->m_lfYmin,m_pParentGraphic->m_lfYmax);
 	}
+
 	replace(m_buffer);
 }
 
 
-qreal ui::qt::SingSeries::zmqToChart(int32_t a_singleDataSize, const char* a_zmqData)const
+void ui::qt::SingSeries::SetEntryDetails(const SSingleEntryBase& a_entryDetails)
 {
-	qreal lfReturn;
-	switch(a_singleDataSize){
-	case 2:
-		if(m_statuses.bits.isProblemHidden){
-			lfReturn = static_cast<qreal>(*reinterpret_cast<const uint16_t*>(a_zmqData))*m_lfYkoef;
-		}
-		else{
-			lfReturn = static_cast<qreal>(*reinterpret_cast<const int16_t*>(a_zmqData))*m_lfYkoef;
-		}
-		break;
-	case 4:
-		lfReturn = static_cast<qreal>(*reinterpret_cast<const uint32_t*>(a_zmqData))*m_lfYkoef;
-		break;
-	case 8:
-		lfReturn = static_cast<qreal>(*reinterpret_cast<const uint64_t*>(a_zmqData))*m_lfYkoef;
-		break;
-	default:
-		lfReturn=.0;
-		break;
-	}
-	return lfReturn;
+	QSettings& aSettings = m_pParentGraphic->m_settings;
+	bool bIsSignChanged;
+
+	m_details2 = a_entryDetails;
+	m_input.dataType = a_entryDetails.type;
+
+	//m_lfXkoef = aSettings.value("ui::qt::SingSeries::lfXkoef::"+m_details2.ensPlusDoocsAdr,m_lfXkoef).toDouble();
+	//m_input.yKoef = aSettings.value("ui::qt::SingSeries::lfYkoef::"+m_details2.ensPlusDoocsAdr,m_input.yKoef).toDouble();
+	GET_PROP_FROM_SETT(aSettings,m_details2.ensPlusDoocsAdr,this,m_lfXkoef,1.0,toDouble);
+	GET_PROP_FROM_SETT(aSettings,m_details2.ensPlusDoocsAdr,this,m_input.yKoef,1.0,toDouble);
+	bIsSignChanged = aSettings.value(  PROP_TO_SET_KEY(m_details2.ensPlusDoocsAdr,isSignChanged),false).toBool();
+	m_input.isSignChanged = bIsSignChanged?1:0;
 }
 
 
@@ -316,7 +295,7 @@ bool ui::qt::SingSeries::event(QEvent* a_event)
 	events::NewData* pEvent = dynamic_cast< events::NewData* >(a_event);
 
 	if(pEvent){
-		PlotGui(pEvent->numberOfPoints(),pEvent->singleItemSize(),pEvent->secondHeader(),pEvent->data());
+		PlotGui(pEvent->numberOfPoints(),pEvent->secondHeader(),pEvent->data());
 	}
 	else{
 		return ::QtCharts::QLineSeries::event(a_event);
@@ -330,21 +309,23 @@ bool ui::qt::SingSeries::event(QEvent* a_event)
 
 ui::qt::HandlerDlg::HandlerDlg(Graphic* a_pGraph, SingSeries* a_pSeries)
 	:
-	  ::common::ui::qt::SizeableDialog(a_pGraph)
+	  ::common::ui::qt::SizeableWidget< ::QDialog >(a_pSeries->m_details2.ensPlusDoocsAdr.toStdString().c_str(), a_pGraph)
 {
-	NewSettings& aSettings = thisApp()->settings();
-	bool bFrameloss = aSettings.value("ui::qt::HandlerDlg::isFrameloss",false).toBool();
+	QSettings& aSettings = a_pGraph->m_settings;
+	bool bFrameloss = aSettings.value( m_settingsKey + "/isFrameloss",false).toBool();
 
 	m_defaultWindowFlags = windowFlags();
 	m_pGraph = a_pGraph;
 	m_pSeries = a_pSeries;
 
-	m_hideUnhideProblem.setText(a_pSeries->m_statuses.bits.isProblemHidden?"Unhide overflow problem":"Hide overflow problem");
+	m_toggleSign.setText(a_pSeries->m_input.isSignChanged?"Show correct sign":"Show togled sign");
 	m_deleteBtn.setText("Delete");
+	m_settingsBtn.setText("Settings");
 	m_cancel.setText("Cancel");
 
-	m_mainLayout.addWidget(&m_hideUnhideProblem);
+	m_mainLayout.addWidget(&m_toggleSign);
 	m_mainLayout.addWidget(&m_deleteBtn);
+	m_mainLayout.addWidget(&m_settingsBtn);
 	m_mainLayout.addWidget(&m_cancel);
 
 	setLayout(&m_mainLayout);
@@ -358,12 +339,28 @@ ui::qt::HandlerDlg::HandlerDlg(Graphic* a_pGraph, SingSeries* a_pSeries)
 		hide();
 	});
 
-	::QObject::connect(&m_hideUnhideProblem,&QPushButton::clicked,this,[this](){
-		NewSettings& aSettings = thisApp()->settings();
-		bool bProblemHidden = m_pSeries->m_statuses.bits.isProblemHidden ? true : false;
+	::QObject::connect(&m_toggleSign,&QPushButton::clicked,this,[this](){
+		QSettings& aSettings = m_pGraph->m_settings;
+		bool bIsSignChangedWillBe = m_pSeries->m_input.isSignChanged ? false : true;
 
-		m_pSeries->m_statuses.bits.isProblemHidden = ~m_pSeries->m_statuses.bits.isProblemHidden;
-		aSettings.setValue("ui::qt::SingSeries"+m_pSeries->m_details.ensPlusDoocsAdr,bProblemHidden);
+		aSettings.setValue(PROP_TO_SET_KEY(m_pSeries->m_details2.ensPlusDoocsAdr,isSignChanged),bIsSignChangedWillBe);
+		m_pSeries->m_input.isSignChanged = ~m_pSeries->m_input.isSignChanged;
+		hide();
+	});
+
+	::QObject::connect(&m_settingsBtn,&QPushButton::clicked,this,[this](){
+		SeriesSettings settDlg(m_pGraph,m_pSeries);
+		if(settDlg.MyExec()){
+			QSettings& aSettings = m_pGraph->m_settings;
+			m_pSeries->m_lfXkoef = settDlg.m_XkoefSpin.value();
+			m_pSeries->m_input.yKoef = settDlg.m_YkoefSpin.value();
+			qDebug()<<"m_lfXkoef="<<m_pSeries->m_lfXkoef;
+			//aSettings.setValue( m_pSeries->m_details2.ensPlusDoocsAdr + "/lfXkoef",m_pSeries->m_lfXkoef);
+			//aSettings.setValue( m_pSeries->m_details2.ensPlusDoocsAdr + "/lfXkoef",m_pSeries->m_input.yKoef);
+			WRITE_PROP_TO_SETT(aSettings,m_pSeries->m_details2.ensPlusDoocsAdr,m_pSeries,m_lfXkoef);
+			WRITE_PROP_TO_SETT(aSettings,m_pSeries->m_details2.ensPlusDoocsAdr,m_pSeries,m_input.yKoef);
+			++m_pSeries->m_statuses.bits.fitGraphNumber;
+		}
 		hide();
 	});
 
@@ -384,24 +381,75 @@ void ui::qt::HandlerDlg::mouseReleaseEvent(QMouseEvent * a_event )
 		});
 		if(currentFlags&Qt::FramelessWindowHint){  // we have frameloss
 			aMenu.addAction(QIcon(":/img/window_frame.png"),tr("Show Frame"),[this](){
-				NewSettings& aSettings = thisApp()->settings();
+				QSettings& aSettings = m_pGraph->m_settings;
 				setWindowFlags(m_defaultWindowFlags);
-				aSettings.setValue("ui::qt::HandlerDlg::isFrameloss",false);
+				aSettings.setValue(m_settingsKey + "/isFrameloss",false);
 				show();
 			});
 		}
 		else{
 			aMenu.addAction(tr("Hide Frame"),[this](){
-				NewSettings& aSettings = thisApp()->settings();
+				QSettings& aSettings = m_pGraph->m_settings;
 				setWindowFlags(m_defaultWindowFlags|Qt::FramelessWindowHint);
-				aSettings.setValue("ui::qt::HandlerDlg::isFrameloss",true);
+				aSettings.setValue(m_settingsKey + "/isFrameloss",true);
 				show();
 			});
 		}
 		aMenu.exec(mapToGlobal(a_event->pos()));
 	}break;
 	default:
-		::common::ui::qt::SizeableDialog::mousePressEvent(a_event);
+		::common::ui::qt::SizeableWidget< ::QDialog >::mousePressEvent(a_event);
 		break;
 	}
+}
+
+
+/*/////////////////////////////////////////////////////////////////////////////////////*/
+ui::qt::SeriesSettings::SeriesSettings(Graphic* a_pGraph,SingSeries* a_pSeries)
+	:
+	  ::common::ui::qt::SizeableWidget< ::QDialog >(a_pSeries->m_details2.ensPlusDoocsAdr.toStdString().c_str(), a_pGraph),
+	  m_pSeries(a_pSeries)
+{
+#if 0
+	QLabel			m_lblXkoef;
+	QDoubleSpinBox	m_XkoefSpin;
+	QLabel			m_lblYkoef;
+	QDoubleSpinBox	m_YkoefSpin;
+	QPushButton		m_btnSet;
+	QPushButton		m_btnCancel;
+#endif
+
+	m_bSetPushed = false;
+
+	m_lblXkoef.setText("Koef. X");
+	m_XkoefSpin.setValue(a_pSeries->m_lfXkoef);
+	m_lblYkoef.setText("Koef. Y");
+	m_YkoefSpin.setValue(a_pSeries->m_input.yKoef);
+	m_btnSet.setText("SET");
+	m_btnCancel.setText("CANCEL");
+
+	m_mainLayout.addWidget(&m_lblXkoef,0,0);
+	m_mainLayout.addWidget(&m_XkoefSpin,0,1);
+	m_mainLayout.addWidget(&m_lblYkoef,1,0);
+	m_mainLayout.addWidget(&m_YkoefSpin,1,1);
+
+	m_mainLayout.addWidget(&m_btnSet,2,0);
+	m_mainLayout.addWidget(&m_btnCancel,2,1);
+
+	setLayout(&m_mainLayout);
+
+	connect(&m_btnSet,&QPushButton::clicked,this,[this](){
+		m_bSetPushed = true;
+		hide();
+	});
+
+	connect(&m_btnCancel,&QPushButton::clicked,this,[this](){
+		hide();
+	});
+}
+
+bool ui::qt::SeriesSettings::MyExec()
+{
+	::common::ui::qt::SizeableWidget< ::QDialog >::exec();
+	return m_bSetPushed;
 }

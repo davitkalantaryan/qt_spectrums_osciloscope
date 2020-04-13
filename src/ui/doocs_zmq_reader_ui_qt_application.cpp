@@ -26,6 +26,8 @@
 #define sa_handler2	__sigaction_handler.sa_handler
 #endif
 
+static const int s_cnEnsTerminatorStringLength = static_cast<int>(strlen(ENS_TERMINATOR2));
+
 
 namespace doocs_zmq_reader{ namespace ui { namespace qt{
 
@@ -64,9 +66,57 @@ ui::qt::Application::Application(int& a_argc, char** a_argv)
 	:
 	  ::QApplication (a_argc,a_argv)
 {
-	NewSettings& aSettings = thisApp()->settings();
-	//::std::list<QVariant> aListStd{"","2"};
-	//::QList<QVariant> aListQt = ::QList<QVariant>::fromStdList(aListStd );
+	QSettings& aSettings = *m_appSettings.m_pSettings;
+	//QSettings aSettings;
+	////::std::list<QVariant> aListStd{"","2"};
+	////::QList<QVariant> aListQt = ::QList<QVariant>::fromStdList(aListStd );
+	//
+	////
+	////aSettings.setValue("TEST1/TEST2/TEST3/TEST4/TEST5/VAL1",1);
+	////aSettings.setValue("TEST1/TEST2/TEST3/TEST4/TEST5/VAL2",2);
+	//aSettings.beginGroup("TEST1");
+	//aSettings.beginGroup("TEST2");
+	//aSettings.beginGroup("TEST3");
+	//aSettings.beginGroup("TEST4");
+	//aSettings.beginGroup("TEST5");
+	//aSettings.setValue("VAL1",1);
+	//aSettings.setValue("VAL2",2);
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.setValue("GVAL1",3);
+	//aSettings.setValue("GVAL2",4);
+	//aSettings.beginGroup("TEST1/AAA");
+	//aSettings.beginGroup("TEST2");
+	//aSettings.beginGroup("TEST3");
+	//aSettings.beginGroup("TEST4");
+	//aSettings.beginGroup("TEST6");
+	//aSettings.setValue("VAL3",5);
+	//aSettings.setValue("VAL4",6);
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.setValue("GVAL3",7);
+	//aSettings.setValue("GVAL4",8);
+	//aSettings.beginGroup("TEST1");
+	//aSettings.beginGroup("TEST2");
+	//aSettings.beginGroup("TEST3");
+	//aSettings.beginGroup("TEST4");
+	//aSettings.beginGroup("TEST5");
+	//aSettings.setValue("VAL5",9);
+	//aSettings.setValue("VAL6",10);
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	//aSettings.endGroup();
+	////
+	//
+	//exit(0);
 
 	m_statuses.allBits = 0;
 	m_pContext = zmq_ctx_new();
@@ -109,12 +159,6 @@ void ui::qt::Application::StopZmqReceiverThread()
 }
 
 
-NewSettings& ui::qt::Application::settings()
-{
-	return *m_appSettings.m_pSettings;
-}
-
-
 const QString& ui::qt::Application::ensHostValue()const
 {
 	return m_ensHostValue;
@@ -124,7 +168,7 @@ const QString& ui::qt::Application::ensHostValue()const
 void ui::qt::Application::SetEnsHostValue(const QString& a_ensHostValue)
 {
 	if(a_ensHostValue!=m_ensHostValue){
-		NewSettings& aSettings = thisApp()->settings();
+		QSettings& aSettings = *m_appSettings.m_pSettings;
 		DynCleanDoocsCClient();
 		//setenv("ENSHOST",a_ensHostValue.toStdString().c_str(),1);
 		DynInitDoocsCClient(a_ensHostValue.toStdString().c_str());
@@ -144,7 +188,7 @@ void ui::qt::Application::RemoveExistingPropertyWorkerThread(SSingleEntry* a_pEx
 	m_currentEntriesAccessedOnlyByWorker.erase(a_pExisting->setIter);
 	::QMetaObject::invokeMethod(this,[this](){
 		QList<QVariant> listCurrent = m_currentEntriesAccessedOnlyByWorker.list();
-		settings().setValue(CURRENT_ENTRIES_SETTINGS_KEY,listCurrent);
+		m_appSettings.m_pSettings->setValue(CURRENT_ENTRIES_SETTINGS_KEY,listCurrent);
 	},Qt::BlockingQueuedConnection);
 
 	{
@@ -164,13 +208,15 @@ void ui::qt::Application::RemoveExistingPropertyWorkerThread(SSingleEntry* a_pEx
 void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QString& a_serverAddress,SingSeries* a_pSeries)
 {
 	int nReturn, nType, nPort;
+	PrepareDaqEntryInputs prInps;
+	PrepareDaqEntryOutputs prOuts;
 	events::PropertyAddingDone* pEvent;
-	QString ensPlusDoocsAddress = m_ensHostValue + ENS_TERMINATOR + a_serverAddress;
+	QString ensPlusDoocsAddress = m_ensHostValue + ENS_TERMINATOR2 + a_serverAddress;
 	SSingleEntryBase aEntry;
 	EqData *pDataIn=nullptr, *pDataOut=nullptr;
 	EqAdr* pEqAddr=nullptr;
 	EqCall* pEqCall=nullptr;
-	DEC_OUT_PD(TypeAndCount) branchInfo;
+	//DEC_OUT_PD(TypeAndCount) branchInfo;
 	::std::string doocsUrl = a_serverAddress.toStdString();
 	::std::string hostName;
 	::std::string propToSubscribe ;
@@ -207,9 +253,9 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 		return;
 	}
 	//branchInfo.type = dataOut.type();
-	branchInfo.type=DynEqDataType(pDataOut);
+	prInps.dataType=DynEqDataType(pDataOut);
 	//branchInfo.itemsCountPerEntry = dataOut.length();
-	branchInfo.itemsCountPerEntry = DynEqDataLength(pDataOut);
+	prInps.countIn = DynEqDataLength(pDataOut);
 
 	//propToSubscribe = eqAddr.property();
 	propToSubscribe = DynEqAdrProperty(pEqAddr);
@@ -264,14 +310,19 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 
 	zmqEndpoint = ::std::string("tcp://") + hostName + ":" + ::std::to_string(nPort);
 
-	if(!PrepareDaqEntryBasedOnType2(0,branchInfo.type,nullptr,&branchInfo,&aEntry.singleItemSize,&aEntry.secondHeaderLength,NEWNULLPTR2,NEWNULLPTR2)){
+	prInps.shouldDupString = 0;
+
+	memset(&prOuts,0,sizeof(prOuts));
+	//if(!PrepareDaqEntryBasedOnType(0,branchInfo.type,nullptr,&branchInfo,&aEntry.singleItemSize,&aEntry.secondHeaderLength,NEWNULLPTR2,NEWNULLPTR2,NEWNULLPTR2)){
+	if(!PrepareDaqEntryBasedOnType(&prInps,&prOuts)){
 		qCritical()<<"No information on this type";
 		pEvent = new events::PropertyAddingDone(a_pSeries,"No information on this type");
 		::QCoreApplication::postEvent(a_pCaller,pEvent);
 		return;
 	}
-	aEntry.type = branchInfo.type;
-	aEntry.expectedDataLength = static_cast<uint32_t>(branchInfo.itemsCountPerEntry) * aEntry.singleItemSize;
+	aEntry.type = prInps.dataType;
+	aEntry.singleItemSize = prOuts.oneItemSize;
+	aEntry.expectedDataLength = static_cast<int32_t>(prOuts.itemsCountPerEntry) * static_cast<int32_t>(aEntry.singleItemSize);
 
 	if(!m_pContext){
 		qCritical()<<"No zmq context";
@@ -311,7 +362,7 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 		m_recentPastEntriesAccessedOnlyByWorker.insert(ensPlusDoocsAddress);
 		::QMetaObject::invokeMethod(this,[this](){
 			QList<QVariant> listRecent = m_recentPastEntriesAccessedOnlyByWorker.list();
-			settings().setValue(RECENT_PAST_ENTRIES_SETTINGS_KEY,listRecent);
+			m_appSettings.m_pSettings->setValue(RECENT_PAST_ENTRIES_SETTINGS_KEY,listRecent);
 		},Qt::BlockingQueuedConnection);
 	}
 
@@ -319,7 +370,7 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 
 	::QMetaObject::invokeMethod(this,[this](){
 		QList<QVariant> listCurrent = m_currentEntriesAccessedOnlyByWorker.list();
-		settings().setValue(CURRENT_ENTRIES_SETTINGS_KEY,listCurrent);
+		m_appSettings.m_pSettings->setValue(CURRENT_ENTRIES_SETTINGS_KEY,listCurrent);
 	},Qt::BlockingQueuedConnection);
 
 	//pEntry->
@@ -535,11 +586,13 @@ void ui::qt::Application::ReadAndNotifySingleEntry(SSingleEntry* a_pEntry)
 	void* pBufferForSecondHeader = nullptr;
 	void* pBufferForData = nullptr;
 
+	if(a_pEntry->b.expectedDataLength<1){return;}
+
 	if(a_pEntry->b.secondHeaderLength>0){
 		pBufferForSecondHeader = malloc(a_pEntry->b.secondHeaderLength);
 		if(!pBufferForSecondHeader){isBadAlloc=true;goto returnPoint;}
 	}
-	pBufferForData = malloc(a_pEntry->b.expectedDataLength);
+	pBufferForData = malloc(static_cast<size_t>(a_pEntry->b.expectedDataLength));
 	if(!pBufferForData){isBadAlloc=true;goto returnPoint;}
 
 	nReturn=zmq_recv(a_pEntry->b.pSocket,&aDcsHeader,sizeof(dmsg_hdr_t),0);
@@ -589,7 +642,9 @@ void ui::qt::Application::ReadAndNotifySingleEntry(SSingleEntry* a_pEntry)
 		goto returnPoint;
 	}
 
-	pEvent = new events::NewData(pBufferForSecondHeader,pBufferForData,a_pEntry->b.expectedDataLength/a_pEntry->b.singleItemSize,a_pEntry->b.singleItemSize);
+	pEvent = new events::NewData(pBufferForSecondHeader,pBufferForData,
+								 a_pEntry->b.expectedDataLength/static_cast<int32_t>(a_pEntry->b.singleItemSize),
+								 static_cast<int32_t>(a_pEntry->b.singleItemSize));
 	::QCoreApplication::postEvent(a_pEntry->pOwner,pEvent);
 
 	pBufferForSecondHeader=nullptr;
@@ -716,7 +771,7 @@ ui::qt::USettings::USettings()
 	QCoreApplication::setOrganizationName("DESY");
 	QCoreApplication::setApplicationName("doocs_zmq_reader");
 	QSettings::setDefaultFormat(QSettings::IniFormat); // use ini files on all platforms
-	m_pSettings = new NewSettings();
+	m_pSettings = new QSettings();
 
 #ifdef NewSettings_redefined
 	QSettings::Format fmt = m_pSettings->m_settings.format();
@@ -877,11 +932,11 @@ namespace doocs_zmq_reader{ namespace ui { namespace qt{
 bool GetEnsAndDoocsAddressFromSavedString(const QString& a_savedString, QString* a_pEns, QString* a_pDoocsAddress)
 {
 	bool bRet=false;
-	int nIndex = a_savedString.indexOf(ENS_TERMINATOR);
+	int nIndex = a_savedString.indexOf(ENS_TERMINATOR2);
 	if(nIndex>=1){
 		bRet = true;
 		*a_pEns = a_savedString.mid(0,nIndex);
-		*a_pDoocsAddress = a_savedString.mid(nIndex+2);
+		*a_pDoocsAddress = a_savedString.mid(nIndex+s_cnEnsTerminatorStringLength);
 	}
 	else{
 		*a_pDoocsAddress = a_savedString;

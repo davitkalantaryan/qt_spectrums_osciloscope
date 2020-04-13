@@ -8,11 +8,12 @@
 #define SRC_UI_QT_MAINWINDOW_HPP
 
 #include <QMainWindow>
+#include <common/ui/qt/sizeablewidget.hpp>
 #include <ui/qt/centralwidget.hpp>
 
 namespace doocs_zmq_reader{ namespace ui { namespace qt{
 
-class MainWindow final : public ::QMainWindow
+class MainWindow final : public ::common::ui::qt::SizeableWidget< ::QMainWindow >
 {
 public:
 	MainWindow();

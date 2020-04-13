@@ -10,6 +10,7 @@
 #include <ui/qt/events.hpp>
 #include <QMouseEvent>
 #include <ui/qt/application.hpp>
+#include <QSettings>
 
 #define REQUEST_VECT_SIZE	2
 
@@ -17,15 +18,14 @@ using namespace doocs_zmq_reader;
 
 ui::qt::ConnectionDialog::ConnectionDialog(QWidget* a_pParent)
 	:
-	  ::common::ui::qt::SizeableDialog(a_pParent),
+	  ::common::ui::qt::SizeableWidget< ::QDialog >(nullptr, a_pParent),
 	  m_ensHeader("ENSHOST")
 {
-	NewSettings& aSettings = thisApp()->settings();
+	QSettings aSettings;
 	QString ensHost = thisApp()->ensHostValue();
 	if(ensHost.size()<2){ensHost="Unknown";}
 
 	m_bReturn = false;
-
 
 	m_ensHosts.setText(ensHost);
 	m_ok.setText("Add");
@@ -141,7 +141,7 @@ ui::qt::ConnectionDialog::~ConnectionDialog()
 
 bool ui::qt::ConnectionDialog::MyExec()
 {
-	::common::ui::qt::SizeableDialog::exec();
+	::common::ui::qt::SizeableWidget< ::QDialog >::exec();
 	::QObject::disconnect(m_connectionNewEns);
 	if((m_ensHostName.size()>1)&&(m_ensHostName!=thisApp()->ensHostValue())){
 		thisApp()->SetEnsHostValue(m_ensHostName);
@@ -192,7 +192,7 @@ bool ui::qt::NewComboBox::event( QEvent* a_event)
 /*/////////////////////////////////////////////////////////////////////////////////////*/
 ui::qt::EnsChangerDialog::EnsChangerDialog(QWidget* a_pParent)
 	:
-	  ::common::ui::qt::SizeableDialog(a_pParent)
+	  ::common::ui::qt::SizeableWidget< ::QDialog >( nullptr,a_pParent)
 {
 	m_bReturn = false;
 	m_ensHost.setText(thisApp()->ensHostValue());
@@ -220,7 +220,7 @@ ui::qt::EnsChangerDialog::EnsChangerDialog(QWidget* a_pParent)
 
 bool ui::qt::EnsChangerDialog::MyExec()
 {
-	::common::ui::qt::SizeableDialog::exec();
+	::common::ui::qt::SizeableWidget< ::QDialog >::exec();
 	return  m_bReturn;
 }
 

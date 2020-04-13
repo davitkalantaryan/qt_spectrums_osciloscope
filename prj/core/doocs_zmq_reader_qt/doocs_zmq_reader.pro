@@ -57,7 +57,6 @@ RESOURCES += \
     $${PWD}/../../../src/resources/doocs_zmq_reader.qrc
 
 SOURCES +=	\
-	$${PWD}/../../../src/common/common_ui_qt_sizeabledialog.cpp						\
 	$${PWD}/../../../src/ui/doocs_zmq_reader_ui_qt_mainwindow.cpp						\
 	$${PWD}/../../../src/ui/main_doocs_zmq_reader_ui_qt.cpp							\
 	$${PWD}/../../../src/ui/doocs_zmq_reader_ui_qt_application.cpp						\
@@ -70,7 +69,8 @@ SOURCES +=	\
 	$${PWD}/../../../src/libs/entry_doocsclient_dynamic.cpp
 
 HEADERS +=	\
-	$${PWD}/../../../include/common/ui/qt/sizeabledialog.hpp							\
+	$${PWD}/../../../include/common/ui/qt/sizeablewidget.hpp							\
+	$${PWD}/../../../include/common/ui/qt/sizeablewidget.impl.hpp		\
 	$${PWD}/../../../src/ui/qt/application.hpp								\
 	$${PWD}/../../../src/ui/qt/mainwindow.hpp								\
 	$${PWD}/../../../src/ui/qt/centralwidget.hpp								\
@@ -80,4 +80,5 @@ HEADERS +=	\
 	$${PWD}/../../../include/doocsclient_dynamic.h								\
 	$${PWD}/../../../include/common/unnamedsemaphorelite.hpp
 
-OTHER_FILES +=
+OTHER_FILES +=	\
+	$${PWD}/../../../../common_ui_qt_sizeabledialog.cpp

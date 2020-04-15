@@ -57,17 +57,18 @@ ui::qt::Graphic::Graphic()
 
 	if(m_settings.contains(CURRENT_ENTRIES_SETTINGS_KEY)){
 		SingSeries* pSeries;
-		QString curEnsValue = thisApp()->ensHostValue();
-		QString ensHostName,doocsAddress;
+		//QString curEnsValue = thisApp()->ensHostValue();
+		//QString ensHostName,doocsAddress;
 		QList<QVariant> lastEntries = m_settings.value(CURRENT_ENTRIES_SETTINGS_KEY).toList();
 
 		for(auto ensPlusDoocs : lastEntries){
-			if(GetEnsAndDoocsAddressFromSavedString(ensPlusDoocs.toString(),&ensHostName,&doocsAddress)){
-				thisApp()->SetEnsHostValue(ensHostName);
-			}
+			//if(GetEnsAndDoocsAddressFromSavedString(ensPlusDoocs.toString(),&ensHostName,&doocsAddress)){
+			//	thisApp()->SetEnsHostValue(ensHostName);
+			//}
 			pSeries = new SingSeries(this);
 			m_actionPlus.setDisabled(true);
-			thisApp()->AddNewPropertyAnyThread(this,doocsAddress,pSeries);
+			//thisApp()->AddNewPropertyAnyThread(this,doocsAddress,pSeries);
+			thisApp()->AddNewPropertyAnyThread(this,ensPlusDoocs.toString(),pSeries);
 		}  // for(auto ensPlusDoocs : lastEntries){
 	}  // if(aSettings.contains(RECENT_ENTRIES_SETTINGS_KEY)){
 

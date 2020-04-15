@@ -121,9 +121,10 @@ ui::qt::ConnectionDialog::ConnectionDialog(QWidget* a_pParent)
 		QString itemText = a_item->text();
 		QString doocsAddress;
 
-		if(GetEnsAndDoocsAddressFromSavedString(itemText,&m_ensHostName,&doocsAddress)){
-			if(m_ensHostName!=thisApp()->ensHostValue()){
-				m_comment.setText("In the case of pressing Add enshost environment will be changed");
+		if(thisApp()->GetEnsAndDoocsAddressFromSavedString(itemText,&m_ensHostName,&doocsAddress)){
+			//if(m_ensHostName!=thisApp()->ensHostValue()) // this check is done in the function Application::GetEnsAndDoocsAddressFromSavedString2
+			{
+				m_comment.setText("In the case of pressing Add other enshost environment will be used");
 			}
 		}
 		m_fullAddress.setText(doocsAddress);
@@ -144,7 +145,7 @@ bool ui::qt::ConnectionDialog::MyExec()
 	::common::ui::qt::SizeableWidget< ::QDialog >::exec();
 	::QObject::disconnect(m_connectionNewEns);
 	if((m_ensHostName.size()>1)&&(m_ensHostName!=thisApp()->ensHostValue())){
-		thisApp()->SetEnsHostValue(m_ensHostName);
+		thisApp()->SetEnsHostValueAnyThread(m_ensHostName);
 	}
 	return m_bReturn;
 }
@@ -246,7 +247,7 @@ void ui::qt::Enslabel::mouseReleaseEvent(QMouseEvent *a_event)
 		EnsChangerDialog aEnsDlg(this);
 		if(aEnsDlg.MyExec()){
 			QString newVal = aEnsDlg.ensHost();
-			thisApp()->SetEnsHostValue(newVal);
+			thisApp()->SetEnsHostValueAnyThread(newVal);
 			setText(newVal);
 		}
 	}break;

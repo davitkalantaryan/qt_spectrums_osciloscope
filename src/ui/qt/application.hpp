@@ -32,7 +32,7 @@
 #define RECENT_PAST_ENTRIES_SETTINGS_KEY	"RECENT_PAST_ENTRIES"
 #define CURRENT_ENTRIES_SETTINGS_KEY		"CURRENT_ENTRIES"
 //#define ENS_TERMINATOR						"=>"
-#define ENS_TERMINATOR2						"/"
+#define DOOCS_TERMINATOR						"/"
 
 //#define INDEX_FOR_TYPE				0
 //#define INDEX_FOR_SINGLE_ITEM_SIZE	1
@@ -70,7 +70,7 @@ private:
 	::std::list<QVariant>	m_list;
 };
 
-bool GetEnsAndDoocsAddressFromSavedString(const QString& savedString, QString* pEns, QString* pDoocsAddress);
+//bool GetEnsAndDoocsAddressFromSavedString(const QString& savedString, QString* pEns, QString* pDoocsAddress);
 
 struct EarlyJob{
 	enum class Type{None,Names,AddProperty,RemEntry}type;
@@ -109,9 +109,10 @@ public:
 	void AddNewPropertyAnyThread(QWidget* pCaller,const QString& serverAddress,SingSeries* a_pSeries);
 	void GetDoocsNamesAnyThread(QWidget* pCaller,const QString& serverAddress);
 	void RemoveExistingPropertyAnyThread(SSingleEntry* a_pExisting);
-	const QString& ensHostValue()const;
-	void SetEnsHostValue(const QString&);
 	void StopZmqReceiverThread();
+	const QString& ensHostValue()const;
+	bool GetEnsAndDoocsAddressFromSavedString(const QString& savedString, QString* pEns, QString* pDoocsAddress);
+	void SetEnsHostValueAnyThread(const QString&);
 
 private:
 	void AddNewPropertyWorkerThread(QWidget* pCaller,const QString& serverAddress, SingSeries* a_pSeries);
@@ -120,6 +121,10 @@ private:
 
 	void ZmqReceiverThread();
 	void ReadAndNotifySingleEntry(SSingleEntry* pEntry);
+
+	//
+	void SetEnsHostValueWorkerThread(const QString&);
+	static int SetEnsHostValueWorkerThreadRaw(const QString&);
 
 	// replies
 private:
@@ -140,7 +145,7 @@ private:
 	::std::mutex					m_mutexForQueue;
 	::std::thread					m_zmqReceiverThread;
 	void*							m_pContext;
-	QString							m_ensHostValue;
+	QString							m_ensHostValue2;
 	::common::UnnamedSemaphoreLite	m_semaForZmq;
 	::std::list< SSingleEntry* >	m_listEntries;
 	::std::mutex					m_mutexListEntries;

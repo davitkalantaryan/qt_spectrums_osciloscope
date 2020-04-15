@@ -26,7 +26,7 @@
 #define sa_handler2	__sigaction_handler.sa_handler
 #endif
 
-static const int s_cnEnsTerminatorStringLength = static_cast<int>(strlen(ENS_TERMINATOR2));
+static const int s_cnDoocsTerminatorStringLength = static_cast<int>(strlen(DOOCS_TERMINATOR));
 
 
 namespace doocs_zmq_reader{ namespace ui { namespace qt{
@@ -50,11 +50,11 @@ class PtrDeleter
 {
 public:
 	typedef void (*TypeDeleter)(PtrType*);
-	PtrDeleter()=delete;
+	PtrDeleter():m_ptr(nullptr),m_fpDeleter(nullptr){}
 	PtrDeleter(const PtrDeleter&)=delete;
 	PtrDeleter(PtrDeleter&&)=delete;
-	PtrDeleter(PtrType* a_ptr, TypeDeleter a_fpDeleter):m_ptr(a_ptr),m_fpDeleter(a_fpDeleter){}
-	~PtrDeleter(){(*m_fpDeleter)(m_ptr);}
+	~PtrDeleter(){if(m_fpDeleter){(*m_fpDeleter)(m_ptr);}}
+	void set(PtrType* a_ptr, TypeDeleter a_fpDeleter){m_ptr=a_ptr;m_fpDeleter=a_fpDeleter;}
 
 private:
 	PtrType* m_ptr;
@@ -67,6 +67,7 @@ ui::qt::Application::Application(int& a_argc, char** a_argv)
 	  ::QApplication (a_argc,a_argv)
 {
 	QSettings& aSettings = *m_appSettings.m_pSettings;
+	QString aEnsHostValue;
 	//QSettings aSettings;
 	////::std::list<QVariant> aListStd{"","2"};
 	////::QList<QVariant> aListQt = ::QList<QVariant>::fromStdList(aListStd );
@@ -121,7 +122,8 @@ ui::qt::Application::Application(int& a_argc, char** a_argv)
 	m_statuses.allBits = 0;
 	m_pContext = zmq_ctx_new();
 
-	m_ensHostValue=aSettings.value("ENSHOST",getenv("ENSHOST")).toString();
+	aEnsHostValue=aSettings.value("ENSHOST",getenv("ENSHOST")).toString();
+	SetEnsHostValueAnyThread(aEnsHostValue);
 	if(aSettings.contains(RECENT_PAST_ENTRIES_SETTINGS_KEY)){
 		QList<QVariant> recentPastEntries = aSettings.value(RECENT_PAST_ENTRIES_SETTINGS_KEY).toList();
 		m_recentPastEntriesAccessedOnlyByWorker.AddListContent(recentPastEntries);
@@ -161,22 +163,34 @@ void ui::qt::Application::StopZmqReceiverThread()
 
 const QString& ui::qt::Application::ensHostValue()const
 {
-	return m_ensHostValue;
+	return m_ensHostValue2;
 }
 
 
-void ui::qt::Application::SetEnsHostValue(const QString& a_ensHostValue)
+int ui::qt::Application::SetEnsHostValueWorkerThreadRaw(const QString& a_ensHostValue)
 {
-	if(a_ensHostValue!=m_ensHostValue){
-		QSettings& aSettings = *m_appSettings.m_pSettings;
-		DynCleanDoocsCClient();
-		//setenv("ENSHOST",a_ensHostValue.toStdString().c_str(),1);
-		DynInitDoocsCClient(a_ensHostValue.toStdString().c_str());
-		m_ensHostValue = a_ensHostValue.toStdString().c_str();
+	DynCleanDoocsCClient();
+	return DynInitDoocsCClient(a_ensHostValue.toStdString().c_str());
+}
 
-		aSettings.setValue("ENSHOST",m_ensHostValue);
+
+void ui::qt::Application::SetEnsHostValueWorkerThread(const QString& a_ensHostValue)
+{
+	if(a_ensHostValue!=m_ensHostValue2){
+		QSettings& aSettings = *m_appSettings.m_pSettings;
+		SetEnsHostValueWorkerThreadRaw(a_ensHostValue);
+		m_ensHostValue2 = a_ensHostValue.toStdString().c_str();
+		aSettings.setValue("ENSHOST",m_ensHostValue2);
 		emit EnsHostChangedToGuiSignal();
 	}
+}
+
+
+void ui::qt::Application::SetEnsHostValueAnyThread(const QString& a_ensHostValue)
+{
+	QMetaObject::invokeMethod(&m_livesOnWorkerThread,[this,a_ensHostValue](){
+		SetEnsHostValueWorkerThread(a_ensHostValue);
+	});
 }
 
 
@@ -205,22 +219,33 @@ void ui::qt::Application::RemoveExistingPropertyWorkerThread(SSingleEntry* a_pEx
 }
 
 
-void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QString& a_serverAddress,SingSeries* a_pSeries)
+void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QString& a_ensPlusDoocsAddress,SingSeries* a_pSeries)
 {
 	int nReturn, nType, nPort;
 	PrepareDaqEntryInputs prInps;
 	PrepareDaqEntryOutputs prOuts;
 	events::PropertyAddingDone* pEvent;
-	QString ensPlusDoocsAddress = m_ensHostValue + ENS_TERMINATOR2 + a_serverAddress;
+	QString doocsAddress;
+	QString ensHost;
+	bool bEnsChanged=false;
+	QString ensPlusDoocsAddress;
 	SSingleEntryBase aEntry;
 	EqData *pDataIn=nullptr, *pDataOut=nullptr;
 	EqAdr* pEqAddr=nullptr;
 	EqCall* pEqCall=nullptr;
 	//DEC_OUT_PD(TypeAndCount) branchInfo;
-	::std::string doocsUrl = a_serverAddress.toStdString();
+	::std::string doocsUrl ;
 	::std::string hostName;
 	::std::string propToSubscribe ;
 	::std::string zmqEndpoint;
+	PtrDeleter<EqData> aDataInDeleter;
+	PtrDeleter<EqData> aDataOutDeleter;
+	PtrDeleter<EqAdr> eqAdrDeleter;
+	PtrDeleter<EqCall> eqCallDeleter;
+
+	GetEnsAndDoocsAddressFromSavedString(a_ensPlusDoocsAddress,&ensHost,&doocsAddress);
+	ensPlusDoocsAddress = ensHost + DOOCS_TERMINATOR + doocsAddress;
+	doocsUrl = doocsAddress.toStdString();
 
 	if( m_currentEntriesAccessedOnlyByWorker.contains(ensPlusDoocsAddress) ){
 		QString reportStr = ensPlusDoocsAddress + " is already handled";
@@ -230,17 +255,20 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 		return;
 	}
 
-	if(DynInitDoocsCClient(m_ensHostValue.toStdString().c_str())){
-		qCritical()<<"Unable to initialize DOOCS library";
-		pEvent = new events::PropertyAddingDone(a_pSeries,"Unable to initialize DOOCS library");
-		::QCoreApplication::postEvent(a_pCaller,pEvent);
-		return;
+	if(ensHost!=m_ensHostValue2){
+		bEnsChanged = true;
+		if(SetEnsHostValueWorkerThreadRaw(ensHost)){
+			qCritical()<<"Unable to initialize DOOCS library";
+			pEvent = new events::PropertyAddingDone(a_pSeries,"Unable to initialize DOOCS library");
+			::QCoreApplication::postEvent(a_pCaller,pEvent);
+			goto returnPoint;
+		}
 	}
 
-	pDataIn = DynGetNewEqData();PtrDeleter<EqData> aDataInDeleter(pDataIn,DynDeleteEqData);
-	pDataOut = DynGetNewEqData();PtrDeleter<EqData> aDataOutDeleter(pDataOut,DynDeleteEqData);
-	pEqAddr = DynGetNewEqAdr();PtrDeleter<EqAdr> eqAdrDeleter(pEqAddr,DynDeleteEqAdr);
-	pEqCall = DynGetNewEqCall();PtrDeleter<EqCall> eqCallDeleter(pEqCall,DynDeleteEqCall);
+	pDataIn = DynGetNewEqData(); aDataInDeleter.set(pDataIn,DynDeleteEqData);
+	pDataOut = DynGetNewEqData();aDataOutDeleter.set(pDataOut,DynDeleteEqData);
+	pEqAddr = DynGetNewEqAdr();  eqAdrDeleter.set(pEqAddr,DynDeleteEqAdr);
+	pEqCall = DynGetNewEqCall(); eqCallDeleter.set(pEqCall,DynDeleteEqCall);
 
 	//eqAddr.adr(doocsUrl);
 	DynEqAdrAdr(pEqAddr,doocsUrl);
@@ -250,7 +278,7 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 		qCritical()<<"Unable to connect to DOOCS server";
 		pEvent = new events::PropertyAddingDone(a_pSeries,"Unable to connect to DOOCS server");
 		::QCoreApplication::postEvent(a_pCaller,pEvent);
-		return;
+		goto returnPoint;
 	}
 	//branchInfo.type = dataOut.type();
 	prInps.dataType=DynEqDataType(pDataOut);
@@ -271,7 +299,7 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 		qCritical()<<"Unable to set data";
 		pEvent = new events::PropertyAddingDone(a_pSeries,"Unable to set data");
 		::QCoreApplication::postEvent(a_pCaller,pEvent);
-		return;
+		goto returnPoint;
 	}
 
 	//nType=dataOut.type();
@@ -293,7 +321,7 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 		qCritical()<<"Wrong protocol";
 		pEvent = new events::PropertyAddingDone(a_pSeries,"Wrong protocol");
 		::QCoreApplication::postEvent(a_pCaller,pEvent);
-		return ;
+		goto returnPoint ;
 	}  // switch(nType){
 
 	//nReturn=pEqCall->get_option(&eqAddr,&dataIn,&dataOut,EQ_HOSTNAME);
@@ -302,7 +330,7 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 		qCritical()<<"Unable to get hostname";
 		pEvent = new events::PropertyAddingDone(a_pSeries,"Unable to get hostname");
 		::QCoreApplication::postEvent(a_pCaller,pEvent);
-		return;
+		goto returnPoint;
 	}
 
 	//hostName = pDataOut->get_string();
@@ -318,24 +346,25 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 		qCritical()<<"No information on this type";
 		pEvent = new events::PropertyAddingDone(a_pSeries,"No information on this type");
 		::QCoreApplication::postEvent(a_pCaller,pEvent);
-		return;
+		goto returnPoint;
 	}
 	aEntry.type = prInps.dataType;
 	aEntry.singleItemSize = prOuts.oneItemSize;
 	aEntry.expectedDataLength = static_cast<int32_t>(prOuts.itemsCountPerEntry) * static_cast<int32_t>(aEntry.singleItemSize);
+	aEntry.secondHeaderLength = prOuts.zmqSecondHeaderSize;
 
 	if(!m_pContext){
 		qCritical()<<"No zmq context";
 		pEvent = new events::PropertyAddingDone(a_pSeries,"No zmq context");
 		::QCoreApplication::postEvent(a_pCaller,pEvent);
-		return;
+		goto returnPoint;
 	}
 	aEntry.pSocket = zmq_socket(m_pContext,ZMQ_SUB);
 	if(!aEntry.pSocket){
 		qCritical()<<"Unable to create zmq socket";
 		pEvent = new events::PropertyAddingDone(a_pSeries,"Unable to create zmq socket");
 		::QCoreApplication::postEvent(a_pCaller,pEvent);
-		return;
+		goto returnPoint;
 	}
 	nReturn = zmq_setsockopt (aEntry.pSocket, ZMQ_SUBSCRIBE,nullptr, 0);
 	if(nReturn){
@@ -343,7 +372,7 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 		qCritical()<<"Unable to set zmq socket option";
 		pEvent = new events::PropertyAddingDone(a_pSeries,"Unable to set zmq socket option");
 		::QCoreApplication::postEvent(a_pCaller,pEvent);
-		return;
+		goto returnPoint;
 	}
 	nReturn = zmq_connect (aEntry.pSocket, zmqEndpoint.c_str());
 	if(nReturn){
@@ -352,7 +381,7 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 		qCritical()<<errorString;
 		pEvent = new events::PropertyAddingDone(a_pSeries,errorString);
 		::QCoreApplication::postEvent(a_pCaller,pEvent);
-		return;
+		goto returnPoint;
 	}
 
 	aEntry.pParent = new SSingleEntry( ::std::move(zmqEndpoint), ::std::move(aEntry),a_pSeries);
@@ -381,111 +410,15 @@ void ui::qt::Application::AddNewPropertyWorkerThread(QWidget* a_pCaller,const QS
 	m_semaForZmq.post();
 
 	//emit PropertyAddedToGuiSignal();
-	pEvent = new events::PropertyAddingDone(a_serverAddress,a_pSeries,aEntry.pParent->b);
+	pEvent = new events::PropertyAddingDone(doocsAddress,a_pSeries,aEntry.pParent->b);
 	::QCoreApplication::postEvent(a_pCaller,pEvent);
 
-#if 0
-
-	m_statuses.bits.zmqThreadShouldRun = 1;
-	m_zmqThread = ::std::thread([this](const ::std::string& a_zmqEndpoint,uint32_t a_secondHeaderLength, DEC_OUT_PD(TypeAndCount) a_branchInfo, uint32_t a_singleItemSize){
-		uint32_t expectedDataLength = a_singleItemSize * static_cast<uint32_t>(a_branchInfo.itemsCountPerEntry);
-		dmsg_hdr_t aDcsHeader;
-		QVector<QVariant> vectGraph(10);
-		int nReturn;
-		void* pSocket;
-		void* pBufferForSecondHeader=nullptr;
-		void* pBufferForData=nullptr;
-
-		m_statuses.bits.zmqThreadRunning = 1;
-
-		vectGraph[INDEX_FOR_TYPE]=a_branchInfo.type;
-		vectGraph[INDEX_FOR_SINGLE_ITEM_SIZE]=static_cast<int32_t>(a_singleItemSize);
-		vectGraph[INDEX_FOR_ITEMS_COUNT]=a_branchInfo.itemsCountPerEntry;
-
-		if(!m_pContext){
-			qCritical()<<"No zmq context";
-			goto returnPoint;
+returnPoint:
+	if(bEnsChanged){
+		if(SetEnsHostValueWorkerThreadRaw(m_ensHostValue2)){
+			m_ensHostValue2="";
 		}
-		pSocket = zmq_socket(m_pContext,ZMQ_SUB);
-		if(!pSocket){
-			qCritical()<<"Unable to create zmq socket";
-			goto returnPoint;
-		}
-		nReturn = zmq_setsockopt (pSocket, ZMQ_SUBSCRIBE,nullptr, 0);
-		if(nReturn){
-			qCritical()<<"Unable to set zmq socket option";
-			goto returnPoint ;
-		}
-		nReturn = zmq_connect (pSocket, a_zmqEndpoint.c_str());
-		if(nReturn){
-			qCritical()<<"Unable to connect to endpoint "<<a_zmqEndpoint.c_str();
-			goto returnPoint;
-		}
-		//if(!PrepareDaqEntryBasedOnType2())
-		while(m_statuses.bits.zmqThreadShouldRun){
-
-			if(pBufferForSecondHeader){free(pBufferForSecondHeader);pBufferForSecondHeader=nullptr;}
-			if(pBufferForData){free(pBufferForData);pBufferForData=nullptr;}
-
-			if(a_secondHeaderLength>0){
-				pBufferForSecondHeader = malloc(a_secondHeaderLength);
-				if(!pBufferForSecondHeader){throw ::std::bad_alloc();}
-			}
-			pBufferForData = malloc(expectedDataLength);
-			if(!pBufferForData){throw ::std::bad_alloc();}
-
-			nReturn=zmq_recv(pSocket,&aDcsHeader,sizeof(dmsg_hdr_t),0);
-			if(nReturn<0){
-				goto returnPoint;
-			}
-			if(nReturn<4){
-				continue;
-			}
-			switch(aDcsHeader.vers){
-			case 1:{
-				struct dmsg_header_v1* pHeaderV1 = reinterpret_cast<struct dmsg_header_v1*>(&aDcsHeader);
-				short exthd = static_cast<short>(DMSG_HDR_EXT);
-				uint64_t ullnSec = static_cast<uint64_t>(pHeaderV1->sec) & 0x0fffffffful;
-				if (pHeaderV1->size & exthd) {
-					// extended header with 64 bit seconds
-					// sechi contains seconds' high 32 bit word
-					ullnSec |= ( static_cast<uint64_t>(pHeaderV1->sechi) & 0x0fffffffful) << 32;
-					pHeaderV1->size &= ~exthd;
-				}
-				if(nReturn != pHeaderV1->size){
-					// this is not header give chance for header
-					continue;
-				}
-			}break;
-			default:
-				continue;
-			}
-
-			if(a_secondHeaderLength>0){
-				nReturn=zmq_recv(pSocket,pBufferForSecondHeader,a_secondHeaderLength,0);
-				if(nReturn!=static_cast<int>(a_secondHeaderLength)){
-					continue;
-				}
-				vectGraph[INDEX_FOR_SECOND_HEADER]=PointerToQvariant(pBufferForSecondHeader);
-			}
-
-			nReturn=zmq_recv(pSocket,pBufferForData,expectedDataLength,0);
-			if(nReturn!=static_cast<int>(expectedDataLength)){
-				continue;
-			}
-			vectGraph[INDEX_FOR_DATA]=PointerToQvariant(pBufferForData);
-			pBufferForSecondHeader=nullptr;
-			pBufferForData=nullptr;
-			emit ZmqReadDoneSignal(vectGraph);
-		}
-		returnPoint:
-		if(pBufferForSecondHeader){free(pBufferForSecondHeader);pBufferForSecondHeader=nullptr;}
-		if(pBufferForData){free(pBufferForData);pBufferForData=nullptr;}
-		m_statuses.bits.zmqThreadRunning = 0;
-	},::std::string("tcp://") + hostName + ":" + ::std::to_string(nPort),secondHeaderLength,branchInfo,singleItemSize);
-
-	emit ConnectionDoneToGuiSignal();
-#endif  // #if 0
+	}
 }
 
 
@@ -499,15 +432,17 @@ void ui::qt::Application::GetDoocsNamesWorkerThread(QWidget* a_pCaller,const QSt
 	EqAdr* pEqAddr=nullptr;
 	EqCall* pEqCall=nullptr;
 	::std::string adrString = a_serverAddress.toStdString();
+	PtrDeleter<EqAdr> eqAdrDeleter;
+	PtrDeleter<EqCall> eqCallDeleter;
 
-	if(DynInitDoocsCClient(m_ensHostValue.toStdString().c_str())){
+	if(DynInitDoocsCClient(m_ensHostValue2.toStdString().c_str())){
 		qCritical()<<"Unable to initialize DOOCS library";
 		emit GetNamesFailedToGuiSignal("Unable to initialize DOOCS library");
 		return;
 	}
 
-	pEqAddr = DynGetNewEqAdr();PtrDeleter<EqAdr> eqAdrDeleter(pEqAddr,DynDeleteEqAdr);
-	pEqCall = DynGetNewEqCall();PtrDeleter<EqCall> eqCallDeleter(pEqCall,DynDeleteEqCall);
+	pEqAddr = DynGetNewEqAdr();eqAdrDeleter.set(pEqAddr,DynDeleteEqAdr);
+	pEqCall = DynGetNewEqCall();eqCallDeleter.set(pEqCall,DynDeleteEqCall);
 
 	//pData = new EqData;
 	pData = DynGetNewEqData();
@@ -654,6 +589,27 @@ returnPoint:
 	if(pBufferForSecondHeader){free(pBufferForSecondHeader);pBufferForSecondHeader=nullptr;}
 	if(pBufferForData){free(pBufferForData);pBufferForData=nullptr;}
 	if(isBadAlloc){throw ::std::bad_alloc();}
+}
+
+
+bool ui::qt::Application::GetEnsAndDoocsAddressFromSavedString(const QString& a_inputString, QString* a_pEns, QString* a_pDoocsAddress)
+{
+	bool bRet(false);
+	int nCount = a_inputString.count(DOOCS_TERMINATOR);
+	if(nCount>3){  // ens hosts is embedded here
+		int nIndex = a_inputString.indexOf(DOOCS_TERMINATOR);
+		*a_pEns = a_inputString.mid(0,nIndex);
+		*a_pDoocsAddress = a_inputString.mid(nIndex+s_cnDoocsTerminatorStringLength);
+		if((*a_pEns)!=m_ensHostValue2){
+			bRet = true;
+		}
+	}
+	else{
+		*a_pEns = m_ensHostValue2;
+		*a_pDoocsAddress = a_inputString;
+	}
+
+	return bRet;
 }
 
 
@@ -929,20 +885,20 @@ ui::qt::StringSet::Iterator ui::qt::StringSet::insert( const QString& a_newItem)
 
 namespace doocs_zmq_reader{ namespace ui { namespace qt{
 
-bool GetEnsAndDoocsAddressFromSavedString(const QString& a_savedString, QString* a_pEns, QString* a_pDoocsAddress)
-{
-	bool bRet=false;
-	int nIndex = a_savedString.indexOf(ENS_TERMINATOR2);
-	if(nIndex>=1){
-		bRet = true;
-		*a_pEns = a_savedString.mid(0,nIndex);
-		*a_pDoocsAddress = a_savedString.mid(nIndex+s_cnEnsTerminatorStringLength);
-	}
-	else{
-		*a_pDoocsAddress = a_savedString;
-	}
-
-	return bRet;
-}
+//bool GetEnsAndDoocsAddressFromSavedString(const QString& a_savedString, QString* a_pEns, QString* a_pDoocsAddress)
+//{
+//	bool bRet=false;
+//	int nIndex = a_savedString.indexOf(ENS_TERMINATOR2);
+//	if(nIndex>=1){
+//		bRet = true;
+//		*a_pEns = a_savedString.mid(0,nIndex);
+//		*a_pDoocsAddress = a_savedString.mid(nIndex+s_cnEnsTerminatorStringLength);
+//	}
+//	else{
+//		*a_pDoocsAddress = a_savedString;
+//	}
+//
+//	return bRet;
+//}
 
 }}} // namespace doocs_zmq_reader{ namespace ui { namespace qt{

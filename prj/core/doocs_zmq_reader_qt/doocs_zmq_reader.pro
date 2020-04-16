@@ -81,4 +81,5 @@ HEADERS +=	\
 	$${PWD}/../../../include/common/unnamedsemaphorelite.hpp
 
 OTHER_FILES +=	\
-	$${PWD}/../../../../common_ui_qt_sizeabledialog.cpp
+	$${PWD}/../../../../common_ui_qt_sizeabledialog.cpp				\
+	$${PWD}/../../../README.md
